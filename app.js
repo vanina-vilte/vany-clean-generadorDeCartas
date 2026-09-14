@@ -39,6 +39,9 @@ const DEFAULT_CIERRE =
 
 const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
+const PAGE_W_PX = 794;
+const PAGE_H_PX = 1123;
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -147,6 +150,34 @@ function scrollToPreview() {
   }
 }
 
+// Achica visualmente la vista previa (transform: scale) para que entre en pantallas chicas,
+// sin tocar el tamaño real de #preview-page (que tiene que quedar en 794x1123px, A4 exacto,
+// para que la exportación a PDF no se vea afectada).
+function fitPreview() {
+  const col = document.querySelector('.app-preview-col');
+  const shell = document.querySelector('.app-preview-shell');
+  const sizer = el('preview-sizer');
+  const wrap = el('preview-scale-wrap');
+  if (!col || !shell || !sizer || !wrap) return;
+
+  const shellPaddingX = parseFloat(getComputedStyle(shell).paddingLeft) * 2;
+  const available = col.clientWidth - shellPaddingX;
+  const scale = Math.min(1, available / PAGE_W_PX);
+
+  wrap.style.transform = `scale(${scale})`;
+  sizer.style.width = `${Math.round(PAGE_W_PX * scale)}px`;
+  sizer.style.height = `${Math.round(PAGE_H_PX * scale)}px`;
+}
+
+let fitPreviewRaf = null;
+function scheduleFitPreview() {
+  if (fitPreviewRaf) return;
+  fitPreviewRaf = requestAnimationFrame(() => {
+    fitPreviewRaf = null;
+    fitPreview();
+  });
+}
+
 function sanitizeFilenamePart(s) {
   return String(s || '')
     .trim()
@@ -163,17 +194,27 @@ function buildFilename() {
   return `${name}.pdf`;
 }
 
-const PAGE_W_PX = 794;
-const PAGE_H_PX = 1123;
-
 async function downloadPdf() {
   render();
   window.scrollTo(0, 0);
   const pageNode = el('preview-page');
+  const wrap = el('preview-scale-wrap');
+  const sizer = el('preview-sizer');
   const btn = el('btn-pdf');
   const originalLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Generando PDF…';
+
+  // En pantallas chicas la vista previa está achicada (transform: scale, dentro de un
+  // contenedor recortado a ese tamaño) para que entre en el celular/tablet. La restauramos
+  // momentáneamente a su tamaño real (794x1123px, A4) para exportar siempre igual, sin
+  // importar el tamaño de pantalla desde donde se descarga.
+  const previousTransform = wrap.style.transform;
+  const previousSizerWidth = sizer.style.width;
+  const previousSizerHeight = sizer.style.height;
+  wrap.style.transform = 'none';
+  sizer.style.width = `${PAGE_W_PX}px`;
+  sizer.style.height = `${PAGE_H_PX}px`;
 
   try {
     const canvasOpts = { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollX: 0, scrollY: 0 };
@@ -201,6 +242,10 @@ async function downloadPdf() {
     btn.disabled = false;
     btn.textContent = originalLabel;
     alert('No se pudo generar el PDF. Probá de nuevo o usá "Imprimir" (Ctrl+P) como alternativa.');
+  } finally {
+    wrap.style.transform = previousTransform;
+    sizer.style.width = previousSizerWidth;
+    sizer.style.height = previousSizerHeight;
   }
 }
 
@@ -218,6 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
   el('brand-logo').src = LOGO_WORDMARK;
   renderFixedBlockPreview();
   resetForm();
+  fitPreview();
 
   ['f-fecha', 'f-saludo-prefijo', 'f-nombre-contacto', 'f-intro', 'f-cierre'].forEach((id) => {
     el(id).addEventListener('input', render);
@@ -229,4 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
   el('btn-reset').addEventListener('click', () => {
     if (confirm('¿Reiniciar la carta a los valores por defecto?')) resetForm();
   });
+
+  window.addEventListener('resize', scheduleFitPreview);
+  window.addEventListener('orientationchange', scheduleFitPreview);
 });
