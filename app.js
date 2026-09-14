@@ -163,7 +163,10 @@ function buildFilename() {
   return `${name}.pdf`;
 }
 
-function downloadPdf() {
+const PAGE_W_PX = 794;
+const PAGE_H_PX = 1123;
+
+async function downloadPdf() {
   render();
   window.scrollTo(0, 0);
   const pageNode = el('preview-page');
@@ -172,27 +175,33 @@ function downloadPdf() {
   btn.disabled = true;
   btn.textContent = 'Generando PDF…';
 
-  // Formato en px (exacto al tamaño real de la página, 794x1123 = A4 a 96dpi) en vez de
-  // 'a4'/mm: con mm, el redondeo hace que html2pdf agregue una segunda hoja casi en blanco
-  // y desplace el contenido. scrollX/scrollY en 0 evita que el recorte de html2canvas se
-  // desalinee si la página estaba scrolleada al momento de exportar.
-  const opts = {
-    margin: 0,
-    filename: buildFilename(),
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollX: 0, scrollY: 0 },
-    jsPDF: { unit: 'px', format: [794, 1123], orientation: 'portrait', hotfixes: ['px_scaling'] },
-  };
+  try {
+    const canvasOpts = { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollX: 0, scrollY: 0 };
 
-  html2pdf().set(opts).from(pageNode).save().then(() => {
+    const canvas = await html2pdf().set({ html2canvas: canvasOpts }).from(pageNode).toCanvas().get('canvas');
+    const imgData = canvas.toDataURL('image/jpeg', 0.98);
+
+    const pdf = await html2pdf().set({
+      margin: 0,
+      html2canvas: canvasOpts,
+      jsPDF: { unit: 'px', format: [PAGE_W_PX, PAGE_H_PX], orientation: 'portrait', hotfixes: ['px_scaling'] },
+    }).from(pageNode).toPdf().get('pdf');
+
+    // html2pdf calcula mal el tamaño de la imagen cuando la pantalla tiene un escalado (DPI)
+    // distinto de 100%, y la deja más chica que la hoja (de ahí el espacio en blanco a la
+    // derecha). Forzamos manualmente que ocupe el 100% de la página, sin depender de ese
+    // cálculo automático.
+    pdf.addImage(imgData, 'JPEG', 0, 0, PAGE_W_PX, PAGE_H_PX, undefined, 'FAST');
+    pdf.save(buildFilename());
+
     btn.disabled = false;
     btn.textContent = originalLabel;
-  }).catch((err) => {
+  } catch (err) {
     console.error(err);
     btn.disabled = false;
     btn.textContent = originalLabel;
     alert('No se pudo generar el PDF. Probá de nuevo o usá "Imprimir" (Ctrl+P) como alternativa.');
-  });
+  }
 }
 
 function resetForm() {
