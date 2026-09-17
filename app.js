@@ -160,9 +160,19 @@ function fitPreview() {
   const wrap = el('preview-scale-wrap');
   if (!col || !shell || !sizer || !wrap) return;
 
+  const colWidth = col.clientWidth;
+  // El contenedor puede medir 0 (o un valor todavía no definitivo) justo al cargar la
+  // página o durante un cambio de layout; si seguimos de largo con eso, el cálculo da una
+  // escala absurda (incluso negativa) que después queda pegada porque no vuelve a dispararse
+  // ningún evento. Reintentamos en el próximo frame en vez de aplicar un valor inválido.
+  if (colWidth <= 0) {
+    scheduleFitPreview();
+    return;
+  }
+
   const shellPaddingX = parseFloat(getComputedStyle(shell).paddingLeft) * 2;
-  const available = col.clientWidth - shellPaddingX;
-  const scale = Math.min(1, available / PAGE_W_PX);
+  const available = colWidth - shellPaddingX;
+  const scale = available > 0 ? Math.min(1, available / PAGE_W_PX) : 1;
 
   wrap.style.transform = `scale(${scale})`;
   sizer.style.width = `${Math.round(PAGE_W_PX * scale)}px`;
@@ -278,4 +288,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.addEventListener('resize', scheduleFitPreview);
   window.addEventListener('orientationchange', scheduleFitPreview);
+  window.addEventListener('load', scheduleFitPreview);
+
+  const previewCol = document.querySelector('.app-preview-col');
+  if (previewCol && 'ResizeObserver' in window) {
+    new ResizeObserver(scheduleFitPreview).observe(previewCol);
+  }
 });
