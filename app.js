@@ -98,7 +98,9 @@ function renderFixedBlockPreview() {
 
 function render() {
   const v = currentValues();
-  const nombre = v.nombreContacto ? escapeHtml(v.nombreContacto) : '<span class="ph">[Nombre del contacto]</span>';
+  const nombre = v.nombreContacto
+    ? `<span class="ph">${escapeHtml(v.nombreContacto)}</span>`
+    : '<span class="ph">[Nombre del contacto]</span>';
   const introHtml = v.intro.trim()
     ? textToParagraphsHtml(v.intro)
     : '<p><span class="ph">[Escribí el primer párrafo, personalizado para esta empresa]</span></p>';
@@ -204,39 +206,82 @@ function buildFilename() {
   return `${name}.pdf`;
 }
 
+// Según la posición fraccionaria de la hoja y el escalado de la pantalla, el primer píxel de
+// cada borde horizontal puede salir con antialiasing (un hairline blanco). Recortamos unos
+// pocos píxeles de cada lado y estiramos de nuevo al tamaño original: no hay contenido
+// importante a menos de 1px del borde, y la distorsión es imperceptible (~0.25%).
+function trimCanvasEdges(canvas, px) {
+  const out = document.createElement('canvas');
+  out.width = canvas.width;
+  out.height = canvas.height;
+  const ctx = out.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(canvas, px, 0, canvas.width - px * 2, canvas.height, 0, 0, out.width, out.height);
+  return out;
+}
+
+// Captura la hoja desde una copia ubicada en la esquina (0,0) de la ventana, fuera del layout
+// de la app. Capturar la hoja "en su lugar" depende de dónde esté en pantalla (columna
+// derecha en desktop, achicada en celular, con o sin barra de scroll) y html2canvas termina
+// corriendo o recortando el contenido unos píxeles, lo que dejaba franjas blancas a los lados.
+async function captureLetterCanvas() {
+  const holder = document.createElement('div');
+  Object.assign(holder.style, {
+    position: 'fixed',
+    left: '0',
+    top: '0',
+    width: `${PAGE_W_PX}px`,
+    height: `${PAGE_H_PX}px`,
+    zIndex: '-1',
+    pointerEvents: 'none',
+  });
+  const clone = el('preview-page').cloneNode(true);
+  clone.removeAttribute('id');
+  holder.appendChild(clone);
+  document.body.appendChild(holder);
+
+  try {
+    const rawCanvas = await html2pdf()
+      .set({
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          scrollX: 0,
+          scrollY: 0,
+          // Nunca menor al ancho de la hoja (si no, en celular se recorta el borde derecho).
+          windowWidth: Math.max(document.documentElement.clientWidth, PAGE_W_PX),
+        },
+      })
+      .from(clone)
+      .toCanvas()
+      .get('canvas');
+    return trimCanvasEdges(rawCanvas, 2);
+  } finally {
+    holder.remove();
+  }
+}
+
 async function downloadPdf() {
   render();
-  window.scrollTo(0, 0);
-  const pageNode = el('preview-page');
-  const wrap = el('preview-scale-wrap');
-  const sizer = el('preview-sizer');
   const btn = el('btn-pdf');
   const originalLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Generando PDF…';
 
-  // En pantallas chicas la vista previa está achicada (transform: scale, dentro de un
-  // contenedor recortado a ese tamaño) para que entre en el celular/tablet. La restauramos
-  // momentáneamente a su tamaño real (794x1123px, A4) para exportar siempre igual, sin
-  // importar el tamaño de pantalla desde donde se descarga.
-  const previousTransform = wrap.style.transform;
-  const previousSizerWidth = sizer.style.width;
-  const previousSizerHeight = sizer.style.height;
-  wrap.style.transform = 'none';
-  sizer.style.width = `${PAGE_W_PX}px`;
-  sizer.style.height = `${PAGE_H_PX}px`;
-
   try {
-    const canvasOpts = { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollX: 0, scrollY: 0 };
-
-    const canvas = await html2pdf().set({ html2canvas: canvasOpts }).from(pageNode).toCanvas().get('canvas');
+    const canvas = await captureLetterCanvas();
     const imgData = canvas.toDataURL('image/jpeg', 0.98);
 
-    const pdf = await html2pdf().set({
-      margin: 0,
-      html2canvas: canvasOpts,
-      jsPDF: { unit: 'px', format: [PAGE_W_PX, PAGE_H_PX], orientation: 'portrait', hotfixes: ['px_scaling'] },
-    }).from(pageNode).toPdf().get('pdf');
+    const pdf = await html2pdf()
+      .set({
+        margin: 0,
+        jsPDF: { unit: 'px', format: [PAGE_W_PX, PAGE_H_PX], orientation: 'portrait', hotfixes: ['px_scaling'] },
+      })
+      .from(canvas, 'canvas')
+      .toPdf()
+      .get('pdf');
 
     // html2pdf calcula mal el tamaño de la imagen cuando la pantalla tiene un escalado (DPI)
     // distinto de 100%, y la deja más chica que la hoja (de ahí el espacio en blanco a la
@@ -244,18 +289,12 @@ async function downloadPdf() {
     // cálculo automático.
     pdf.addImage(imgData, 'JPEG', 0, 0, PAGE_W_PX, PAGE_H_PX, undefined, 'FAST');
     pdf.save(buildFilename());
-
-    btn.disabled = false;
-    btn.textContent = originalLabel;
   } catch (err) {
     console.error(err);
-    btn.disabled = false;
-    btn.textContent = originalLabel;
     alert('No se pudo generar el PDF. Probá de nuevo o usá "Imprimir" (Ctrl+P) como alternativa.');
   } finally {
-    wrap.style.transform = previousTransform;
-    sizer.style.width = previousSizerWidth;
-    sizer.style.height = previousSizerHeight;
+    btn.disabled = false;
+    btn.textContent = originalLabel;
   }
 }
 
