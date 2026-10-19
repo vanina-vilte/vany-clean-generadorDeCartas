@@ -3,8 +3,8 @@
 
 const FIXED_PARA_1 =
   'De eso se ocupa <strong>Vany Clean</strong>. Brindamos servicios profesionales de limpieza y mantenimiento ' +
-  'para empresas e instituciones en CABA y AMBA, respaldados por <strong>más de 25 años de trayectoria</strong> ' +
-  'en el sector de la limpieza y maestranza.';
+  'para empresas e instituciones en CABA y AMBA. Somos una empresa joven, pero construida sobre ' +
+  '<strong>más de 25 años de experiencia operativa</strong> en el sector de la limpieza y maestranza.';
 
 const FIXED_PARA_2 =
   'Trabajamos con colaboradores registrados, con <strong>ART y seguro de responsabilidad civil vigentes</strong>, ' +
