@@ -68,6 +68,7 @@ body{
   position: relative;
   overflow: hidden;
   background:#ffffff;
+  color: var(--text-body);
   break-after: page;
 }
 .page:last-child{ break-after: auto; }

@@ -298,6 +298,21 @@ async function downloadPdf() {
   }
 }
 
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const btn = el('btn-theme');
+  if (!btn) return;
+  const label = theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro';
+  btn.setAttribute('aria-label', label);
+  btn.setAttribute('title', label);
+}
+
+function toggleTheme() {
+  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  try { localStorage.setItem('vc-theme', next); } catch (e) { /* sin almacenamiento: no se recuerda */ }
+}
+
 function resetForm() {
   el('f-fecha').value = todayInputValue();
   el('f-saludo-prefijo').value = 'Estimado/a';
@@ -310,6 +325,8 @@ function resetForm() {
 
 document.addEventListener('DOMContentLoaded', () => {
   el('brand-logo').src = LOGO_WORDMARK;
+  applyTheme(document.documentElement.getAttribute('data-theme') || 'light');
+  el('btn-theme').addEventListener('click', toggleTheme);
   renderFixedBlockPreview();
   resetForm();
   fitPreview();
